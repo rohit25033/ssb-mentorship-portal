@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SSB Mentorship Portal</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <?!= include('styles'); ?>
+</head>
+<body>
+
+<!-- ============================================================
+     LOADING OVERLAY
+============================================================ -->
+<div id="loading-overlay">
+  <div class="loader-logo">SSB Mentorship</div>
+  <div class="loader-ring"></div>
+  <div class="loader-text">Authenticating your session…</div>
+</div>
+
+<!-- ============================================================
+     ACCESS DENIED
+============================================================ -->
+<div id="access-denied">
+  <div class="denied-icon">🚫</div>
+  <h2>Access Denied</h2>
+  <p id="access-denied-msg">You are not registered in the SSB Mentorship Portal.</p>
+  <p style="font-size:13px; color:#718096; margin-top:8px;">Please contact your program administrator at Scaler School of Business.</p>
+</div>
+
+<!-- ============================================================
+     MAIN APP
+============================================================ -->
+<div id="main-app" style="display:none;">
+
+  <!-- NAVBAR -->
+  <nav id="navbar">
+    <a class="navbar-brand" href="#" onclick="navigateTo('dashboard'); return false;">
+      <span class="brand-icon">🎓</span>
+      SSB Mentorship
+    </a>
+
+    <!-- Desktop nav -->
+    <div class="nav-links">
+      <button class="nav-link-btn active" data-page="dashboard" onclick="navigateTo('dashboard')">
+        🏠 Dashboard
+      </button>
+      <button class="nav-link-btn" data-page="mentors" onclick="navigateTo('mentors')">
+        👥 Mentors
+      </button>
+      <button class="nav-link-btn" data-page="sessions" onclick="navigateTo('sessions')">
+        📋 My Sessions
+      </button>
+    </div>
+
+    <!-- Student chip -->
+    <div class="nav-student-chip">
+      <div class="nav-dot"></div>
+      <div>
+        <div class="chip-name" id="nav-student-name">Loading…</div>
+        <div style="font-size:11px;" id="nav-student-roll"></div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- MOBILE NAV -->
+  <div class="mobile-nav">
+    <button class="mobile-nav-btn active" data-page="dashboard" onclick="navigateTo('dashboard')">
+      <span class="icon">🏠</span>Home
+    </button>
+    <button class="mobile-nav-btn" data-page="mentors" onclick="navigateTo('mentors')">
+      <span class="icon">👥</span>Mentors
+    </button>
+    <button class="mobile-nav-btn" data-page="sessions" onclick="navigateTo('sessions')">
+      <span class="icon">📋</span>Sessions
+    </button>
+  </div>
+
+  <!-- ============================================================
+       PAGE: DASHBOARD
+  ============================================================ -->
+  <div id="page-dashboard" class="page active">
+    <div class="container-fluid">
+      <!-- Welcome Banner -->
+      <div class="welcome-banner" style="margin-top:24px;">
+        <div>
+          <div class="welcome-name" id="dash-name">Welcome</div>
+          <div class="welcome-meta">
+            <span id="dash-rollno"></span> &nbsp;·&nbsp; <span id="dash-batch"></span>
+          </div>
+        </div>
+        <button class="btn-teal" onclick="navigateTo('mentors')">
+          ➕ Book a Session
+        </button>
+      </div>
+
+      <!-- Stats -->
+      <div class="section-label">Overview</div>
+      <div class="row" id="dash-stats">
+        <div class="col-md-4 mb-3">
+          <div class="stat-card">
+            <span class="stat-icon">📚</span>
+            <div class="stat-number">—</div>
+            <div class="stat-label">Total Sessions</div>
+          </div>
+        </div>
+        <div class="col-md-4 mb-3">
+          <div class="stat-card">
+            <span class="stat-icon">✅</span>
+            <div class="stat-number text-teal">—</div>
+            <div class="stat-label">Completed</div>
+          </div>
+        </div>
+        <div class="col-md-4 mb-3">
+          <div class="stat-card">
+            <span class="stat-icon">⏳</span>
+            <div class="stat-number text-amber">—</div>
+            <div class="stat-label">Pending Feedback</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Sessions Table -->
+      <div class="section-label" style="margin-top:16px;">Recent Sessions</div>
+      <div class="ssb-table-wrap">
+        <div class="table-title" style="padding:18px 24px 12px;">📅 My Sessions</div>
+        <div style="padding:0 16px 16px; overflow-x:auto;" id="dash-sessions-table">
+          <div class="d-flex justify-content-center py-4"><div class="loader-ring"></div></div>
+        </div>
+      </div>
+      <div style="height:24px;"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       PAGE: MENTORS
+  ============================================================ -->
+  <div id="page-mentors" class="page">
+    <div class="container-fluid">
+      <div class="page-header">
+        <h1>Our Mentors</h1>
+        <p>Industry leaders ready to guide your journey. Book a 1-on-1 session below.</p>
+      </div>
+
+      <!-- Search + Filter -->
+      <div class="filter-bar">
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="mentor-search" class="form-control" placeholder="Search by name, role, skills…">
+        </div>
+      </div>
+
+      <!-- Mentor Grid -->
+      <div id="mentor-grid" class="mentor-grid">
+        <div class="d-flex justify-content-center py-5 w-100">
+          <div class="loader-ring"></div>
+        </div>
+      </div>
+      <div style="height:24px;"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       PAGE: MY SESSIONS
+  ============================================================ -->
+  <div id="page-sessions" class="page">
+    <div class="container-fluid">
+      <div class="page-header">
+        <h1>Session History</h1>
+        <p>All your mentorship sessions, feedback status, and meeting links.</p>
+      </div>
+      <div id="sessions-table-wrap">
+        <div class="d-flex justify-content-center py-5"><div class="loader-ring"></div></div>
+      </div>
+      <div style="height:24px;"></div>
+    </div>
+  </div>
+
+</div><!-- /main-app -->
+
+<!-- ============================================================
+     TOAST CONTAINER
+============================================================ -->
+<div id="toast-container"></div>
+
+<!-- ============================================================
+     MODAL: BOOKING
+============================================================ -->
+<div id="modal-booking" class="ssb-modal-overlay">
+  <div class="ssb-modal">
+    <button class="ssb-modal-close" onclick="closeModal('modal-booking')">✕</button>
+    <h2>Book a Session</h2>
+    <p class="modal-sub">A 60-minute 1-on-1 mentorship session via Google Meet.</p>
+
+    <!-- Mentor Preview -->
+    <div class="mentor-preview-bar">
+      <div id="booking-mentor-photo"></div>
+      <div>
+        <div class="mentor-name" id="booking-mentor-name"></div>
+        <div class="mentor-role" id="booking-mentor-role"></div>
+      </div>
+    </div>
+
+    <!-- Booking Form -->
+    <div id="booking-form">
+      <div class="form-group">
+        <label class="form-label">📅 Select Date</label>
+        <input type="date" id="booking-date" class="form-control">
+      </div>
+      <div class="form-group">
+        <label class="form-label">🕐 Select Time</label>
+        <input type="time" id="booking-time" class="form-control">
+      </div>
+      <div class="form-group">
+        <label class="form-label">⏱ Duration</label>
+        <input type="text" class="form-control" value="60 Minutes" readonly style="opacity:0.6; cursor:not-allowed;">
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div id="booking-error" class="ssb-alert ssb-alert-danger" style="display:none;">
+      <span>⚠️</span> <span id="booking-error-msg"></span>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:20px;">
+      <button class="btn-ghost btn-full" onclick="closeModal('modal-booking')" style="flex:1;">Cancel</button>
+      <button class="btn-teal btn-full" id="booking-submit-btn" onclick="submitBooking()" style="flex:2;">📅 Confirm Booking</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     MODAL: FEEDBACK REQUIRED (before booking)
+============================================================ -->
+<div id="modal-feedback-required" class="ssb-modal-overlay">
+  <div class="ssb-modal" style="max-width:560px;">
+    <button class="ssb-modal-close" onclick="closeModal('modal-feedback-required')">✕</button>
+    <h2>Feedback Required ⚡</h2>
+    <p class="modal-sub">Please complete your session feedback before booking a new session.</p>
+
+    <div class="feedback-warning">
+      <div class="feedback-warning-icon">⚠️</div>
+      <div class="feedback-warning-text">
+        <h4>Pending Feedback</h4>
+        <p>You must submit feedback for <strong id="feedback-warn-session"></strong> with <strong id="feedback-warn-mentor"></strong> (<span id="feedback-warn-date"></span>) before booking another session.</p>
+      </div>
+    </div>
+
+    <input type="hidden" id="pending-feedback-row">
+
+    <div class="section-label">Your Feedback for <span id="pending-feedback-mentor" class="text-teal"></span></div>
+
+    <div class="form-group">
+      <label class="form-label">Your Feedback</label>
+      <textarea id="pending-fb-text" class="form-control" rows="4" placeholder="Share your experience, learnings, and suggestions from the session…"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Your Rating</label>
+      <div class="star-rating" id="pending-fb-stars">
+        <button class="star-btn" type="button">★</button>
+        <button class="star-btn" type="button">★</button>
+        <button class="star-btn" type="button">★</button>
+        <button class="star-btn" type="button">★</button>
+        <button class="star-btn" type="button">★</button>
+      </div>
+      <input type="hidden" id="pending-fb-rating-value">
+    </div>
+
+    <div id="pending-fb-error" class="ssb-alert ssb-alert-danger" style="display:none;">
+      <span>⚠️</span> <span></span>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:20px;">
+      <button class="btn-ghost" onclick="closeModal('modal-feedback-required')" style="flex:1;">Cancel</button>
+      <button class="btn-teal" id="pending-fb-submit-btn" onclick="submitPendingFeedback()" style="flex:2;">✅ Submit & Proceed to Booking</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     MODAL: STUDENT FEEDBACK (from dashboard/sessions table)
+============================================================ -->
+<div id="modal-student-feedback" class="ssb-modal-overlay">
+  <div class="ssb-modal">
+    <button class="ssb-modal-close" onclick="closeModal('modal-student-feedback')">✕</button>
+    <h2>Session Feedback</h2>
+    <p class="modal-sub" id="sf-session-label">Submit your feedback for this session.</p>
+
+    <input type="hidden" id="sf-row-index">
+
+    <div class="form-group">
+      <label class="form-label">Your Feedback</label>
+      <textarea id="sf-feedback-text" class="form-control" rows="4" placeholder="Share your experience, learnings, and suggestions…"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Your Rating</label>
+      <div class="star-rating" id="sf-stars">
+        <button class="star-btn" type="button">★</button>
+        <button class="star-btn" type="button">★</button>
+        <button class="star-btn" type="button">★</button>
+        <button class="star-btn" type="button">★</button>
+        <button class="star-btn" type="button">★</button>
+      </div>
+      <input type="hidden" id="sf-rating-value">
+    </div>
+
+    <div id="sf-error" class="ssb-alert ssb-alert-danger" style="display:none;">
+      <span>⚠️</span> <span></span>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:20px;">
+      <button class="btn-ghost" onclick="closeModal('modal-student-feedback')" style="flex:1;">Cancel</button>
+      <button class="btn-teal" id="sf-submit-btn" onclick="submitStudentFeedbackModal()" style="flex:2;">✅ Submit Feedback</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     SCRIPTS
+============================================================ -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<?!= include('javascript'); ?>
+
+<!-- Fix error display refs -->
+<script>
+  // Patch error display to use inner span
+  (function() {
+    var origBooking = document.getElementById('booking-error');
+    if (origBooking) {
+      // booking-error textContent patch
+      Object.defineProperty(origBooking, 'textContent', {
+        set: function(val) {
+          var span = this.querySelector('span:last-child') || this;
+          span.textContent = val;
+        }
+      });
+    }
+  })();
+</script>
+
+</body>
+</html>
