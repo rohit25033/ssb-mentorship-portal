@@ -1,0 +1,593 @@
+<script>
+// ============================================================
+// SSB MENTORSHIP PORTAL — javascript.html
+// ============================================================
+
+// ── STATE ──
+var APP = {
+  student: null,
+  sessions: [],
+  mentors: [],
+  currentPage: 'dashboard',
+  pendingFeedbackSessions: [],
+  bookingMentor: null
+};
+
+// ============================================================
+// INIT
+// ============================================================
+
+document.addEventListener('DOMContentLoaded', function () {
+  // Load student info on start
+  google.script.run
+    .withSuccessHandler(onStudentLoaded)
+    .withFailureHandler(onInitError)
+    .getStudentInfo();
+});
+
+function onStudentLoaded(result) {
+  if (!result || !result.success) {
+    hideLoading();
+    showAccessDenied(result);
+    return;
+  }
+  APP.student = result;
+  // Set nav chip
+  document.getElementById('nav-student-name').textContent = result.name;
+  document.getElementById('nav-student-roll').textContent = result.rollNo;
+  // Show app
+  hideLoading();
+  showApp();
+  navigateTo('dashboard');
+}
+
+function onInitError(err) {
+  hideLoading();
+  showAccessDenied({ reason: 'error', message: err.message || 'Unknown error' });
+}
+
+function showApp() {
+  document.getElementById('main-app').style.display = 'block';
+}
+
+function hideLoading() {
+  document.getElementById('loading-overlay').classList.add('hidden');
+}
+
+function showAccessDenied(result) {
+  var el = document.getElementById('access-denied');
+  el.classList.add('open');
+  var msg = '';
+  if (result && result.reason === 'not_found') {
+    msg = 'Your email <strong>' + (result.email || '') + '</strong> is not registered in the SSB Mentorship Portal. Please contact your program administrator.';
+  } else {
+    msg = 'Unable to verify your account. Please try again or contact your administrator.';
+  }
+  document.getElementById('access-denied-msg').innerHTML = msg;
+}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+
+function navigateTo(page) {
+  APP.currentPage = page;
+  // Hide all pages
+  document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
+  // Activate target
+  var target = document.getElementById('page-' + page);
+  if (target) target.classList.add('active');
+  // Update nav buttons
+  document.querySelectorAll('.nav-link-btn').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.page === page);
+  });
+  document.querySelectorAll('.mobile-nav-btn').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.page === page);
+  });
+  // Load page data
+  if (page === 'dashboard') loadDashboard();
+  else if (page === 'mentors') loadMentors();
+  else if (page === 'sessions') loadSessions();
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+
+function loadDashboard() {
+  // Set welcome text
+  document.getElementById('dash-name').innerHTML = 'Welcome back, <em>' + APP.student.name.split(' ')[0] + '</em>';
+  document.getElementById('dash-rollno').textContent = 'Roll No: ' + APP.student.rollNo;
+  document.getElementById('dash-batch').textContent = 'Batch: ' + APP.student.batch;
+
+  // Load stats
+  document.getElementById('dash-stats').innerHTML = '<div class="loader-ring" style="margin:auto;"></div>';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result.success) { showToast('error', 'Failed to load dashboard stats'); return; }
+      APP.sessions = result.sessions || [];
+      renderDashboardStats(result);
+      renderRecentSessions(result.sessions);
+    })
+    .withFailureHandler(function(e) { showToast('error', 'Dashboard load failed'); })
+    .getDashboardStats(APP.student.email);
+}
+
+function renderDashboardStats(result) {
+  document.getElementById('dash-stats').innerHTML =
+    '<div class="col-md-4 mb-3"><div class="stat-card"><span class="stat-icon">📚</span><div class="stat-number">' + result.total + '</div><div class="stat-label">Total Sessions</div></div></div>' +
+    '<div class="col-md-4 mb-3"><div class="stat-card"><span class="stat-icon">✅</span><div class="stat-number text-teal">' + result.completed + '</div><div class="stat-label">Completed</div></div></div>' +
+    '<div class="col-md-4 mb-3"><div class="stat-card"><span class="stat-icon">⏳</span><div class="stat-number text-amber">' + result.pendingFeedback + '</div><div class="stat-label">Pending Feedback</div></div></div>';
+}
+
+function renderRecentSessions(sessions) {
+  var el = document.getElementById('dash-sessions-table');
+  if (!sessions || sessions.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📅</div><h3>No sessions yet</h3><p>Browse mentors and book your first mentorship session.</p></div>';
+    return;
+  }
+  var rows = sessions.slice(0, 5).map(function(s) {
+    return buildSessionRow(s);
+  }).join('');
+  el.innerHTML = buildSessionTable(rows);
+}
+
+function buildSessionTable(rows) {
+  return '<table class="ssb-table"><thead><tr>' +
+    '<th>Session</th><th>Mentor</th><th>Date & Time</th><th>Meet Link</th><th>My Feedback</th><th>Mentor Feedback</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function buildSessionRow(s) {
+  var dt = s.dateTime ? new Date(s.dateTime) : null;
+  var dtStr = dt ? formatDateTime(dt) : '—';
+  var meetHtml = s.meetLink ?
+    '<a href="' + s.meetLink + '" target="_blank" class="meet-link">🎥 Join</a>' : '—';
+  var now = new Date();
+  var isPast = dt && dt < now;
+
+  // Store session in lookup map keyed by rowIndex — avoids passing JSON through onclick attributes
+  APP.sessionMap = APP.sessionMap || {};
+  APP.sessionMap[s.rowIndex] = s;
+
+  var myFb = '';
+  if (!isPast) {
+    myFb = '<span class="badge-pill badge-info">Upcoming</span>';
+  } else if (s.studentFeedback && s.studentRating) {
+    myFb = '<span class="badge-pill badge-done">✓ ' + s.studentRating + '★</span>';
+  } else {
+    myFb = '<span class="badge-pill badge-pend" style="cursor:pointer;" onclick="openFeedbackModal(' + s.rowIndex + ')">⚡ Submit</span>';
+  }
+
+  var mentorFb = (s.mentorFeedback && s.mentorRating) ?
+    '<span class="badge-pill badge-done">✓ ' + s.mentorRating + '★</span>' :
+    '<span class="badge-pill badge-pend">Pending</span>';
+
+  return '<tr>' +
+    '<td data-label="Session"><span class="fw-700 text-teal">' + (s.msnSession || '—') + '</span></td>' +
+    '<td data-label="Mentor">' + (s.mentor || '—') + '</td>' +
+    '<td data-label="Date & Time">' + dtStr + '</td>' +
+    '<td data-label="Meet Link">' + meetHtml + '</td>' +
+    '<td data-label="My Feedback">' + myFb + '</td>' +
+    '<td data-label="Mentor Feedback">' + mentorFb + '</td>' +
+    '</tr>';
+}
+
+// ============================================================
+// MENTORS PAGE
+// ============================================================
+
+function loadMentors() {
+  var grid = document.getElementById('mentor-grid');
+  grid.innerHTML = '<div class="d-flex justify-content-center py-5"><div class="loader-ring"></div></div>';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result.success) { showToast('error', 'Failed to load mentors'); return; }
+      APP.mentors = result.mentors || [];
+      renderMentors(APP.mentors);
+    })
+    .withFailureHandler(function() { showToast('error', 'Failed to load mentors'); })
+    .getMentors();
+}
+
+function renderMentors(mentors) {
+  var grid = document.getElementById('mentor-grid');
+  if (!mentors || mentors.length === 0) {
+    grid.innerHTML = '<div class="empty-state"><div class="empty-icon">👤</div><h3>No mentors found</h3><p>Check back soon.</p></div>';
+    return;
+  }
+
+  var filtered = mentors;
+  var search = document.getElementById('mentor-search') ? document.getElementById('mentor-search').value.toLowerCase() : '';
+  if (search) {
+    filtered = mentors.filter(function(m) {
+      return (m.name + m.currentRole + m.currentOrg + m.skills).toLowerCase().includes(search);
+    });
+  }
+
+  if (filtered.length === 0) {
+    grid.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><h3>No results</h3><p>Try a different search term.</p></div>';
+    return;
+  }
+
+  grid.innerHTML = filtered.map(function(m) { return buildMentorCard(m); }).join('');
+}
+
+function buildMentorCard(m) {
+  var photo = m.photoLink ?
+    '<img src="' + m.photoLink + '" class="mentor-photo" onerror="this.outerHTML=\'<div class=&quot;mentor-photo&quot;>👤</div>\'" alt="' + escHtml(m.name) + '">' :
+    '<div class="mentor-photo">👤</div>';
+
+  var skills = (m.skills || '').split(',').slice(0, 5).map(function(s) {
+    return '<span class="skill-tag">' + escHtml(s.trim()) + '</span>';
+  }).join('');
+
+  var linkedinBtn = m.linkedin ?
+    '<a href="' + escHtml(m.linkedin) + '" target="_blank" class="btn-ghost btn-sm">in LinkedIn</a>' : '';
+
+  var mentorIndex = APP.mentors.indexOf(m);
+  APP.mentorMap = APP.mentorMap || {};
+  APP.mentorMap[mentorIndex] = m;
+
+  return '<div class="mentor-card">' +
+    '<div class="mentor-photo-wrap">' + photo +
+      '<div>' +
+        '<div class="mentor-name">' + escHtml(m.name) + '</div>' +
+        '<div class="mentor-role">' + escHtml(m.currentRole || '') + '</div>' +
+        '<div class="mentor-org">@ ' + escHtml(m.currentOrg || '') + '</div>' +
+      '</div>' +
+    '</div>' +
+    '<hr class="mentor-divider">' +
+    '<div class="mentor-meta-row">' +
+      (m.university ? '<span class="mentor-meta-chip">🎓 ' + escHtml(m.university) + '</span>' : '') +
+      (m.educationStream ? '<span class="mentor-meta-chip">📖 ' + escHtml(m.educationStream) + '</span>' : '') +
+    '</div>' +
+    '<div class="skills-wrap">' + skills + '</div>' +
+    '<div class="mentor-actions">' +
+      linkedinBtn +
+      '<button class="btn-teal btn-sm" onclick="openBookingModal(' + mentorIndex + ')">📅 Book Session</button>' +
+    '</div>' +
+  '</div>';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var s = document.getElementById('mentor-search');
+  if (s) s.addEventListener('input', function() { renderMentors(APP.mentors); });
+});
+
+// ============================================================
+// SESSIONS PAGE
+// ============================================================
+
+function loadSessions() {
+  var el = document.getElementById('sessions-table-wrap');
+  el.innerHTML = '<div class="d-flex justify-content-center py-5"><div class="loader-ring"></div></div>';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result.success) { showToast('error', 'Failed to load sessions'); return; }
+      APP.sessions = result.sessions || [];
+      renderAllSessions(result.sessions);
+    })
+    .withFailureHandler(function() { showToast('error', 'Failed to load sessions'); })
+    .getStudentSessions(APP.student.email);
+}
+
+function renderAllSessions(sessions) {
+  var el = document.getElementById('sessions-table-wrap');
+  if (!sessions || sessions.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><h3>No sessions yet</h3><p>Book your first session from the Mentors tab.</p></div>';
+    return;
+  }
+  var rows = sessions.map(function(s) { return buildSessionRow(s); }).join('');
+  el.innerHTML = '<div class="ssb-table-wrap"><div class="table-title">📋 Session History</div><div style="padding:16px;overflow-x:auto;">' + buildSessionTable(rows) + '</div></div>';
+}
+
+// ============================================================
+// BOOKING MODAL
+// ============================================================
+
+function openBookingModal(mentorIndex) {
+  APP.mentorMap = APP.mentorMap || {};
+  var mentor = APP.mentorMap[mentorIndex];
+  if (!mentor) { showToast('error', 'Mentor not found. Please refresh and try again.'); return; }
+  APP.bookingMentor = mentor;
+
+  // First check feedback
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result.success) { showToast('error', result.message); return; }
+      if (result.feedbackRequired) {
+        APP.pendingFeedbackSessions = result.pendingSessions;
+        openFeedbackRequiredModal(result.pendingSessions[0]);
+        return;
+      }
+      showBookingModal(mentor);
+    })
+    .withFailureHandler(function(e) { showToast('error', 'Error checking feedback status'); })
+    .checkFeedbackRequired(APP.student.email);
+}
+
+function openFeedbackRequiredModal(session) {
+  document.getElementById('feedback-warn-mentor').textContent = session.mentor || 'your mentor';
+  document.getElementById('feedback-warn-session').textContent = session.msnSession || '';
+  var dt = session.dateTime ? formatDateTime(new Date(session.dateTime)) : '';
+  document.getElementById('feedback-warn-date').textContent = dt;
+
+  // Pre-fill session info for the inline form
+  document.getElementById('pending-feedback-row').value = session.rowIndex;
+  document.getElementById('pending-feedback-mentor').textContent = session.mentor;
+
+  openModal('modal-feedback-required');
+}
+
+function showBookingModal(mentor) {
+  document.getElementById('booking-mentor-photo').innerHTML = mentor.photoLink ?
+    '<img src="' + mentor.photoLink + '" class="mentor-photo" onerror="this.outerHTML=\'<div class=&quot;mentor-photo&quot;>👤</div>\'" alt="">' :
+    '<div class="mentor-photo">👤</div>';
+  document.getElementById('booking-mentor-name').textContent = mentor.name;
+  document.getElementById('booking-mentor-role').textContent = (mentor.currentRole || '') + (mentor.currentOrg ? ' @ ' + mentor.currentOrg : '');
+  document.getElementById('booking-error').style.display = 'none';
+  document.getElementById('booking-date').value = '';
+  document.getElementById('booking-time').value = '';
+
+  // Set min date to today
+  var dateInput = document.getElementById('booking-date');
+  var now = new Date();
+  var minDate = now.toISOString().slice(0, 10);
+  dateInput.min = minDate;
+
+  openModal('modal-booking');
+}
+
+function submitBooking() {
+  var btn = document.getElementById('booking-submit-btn');
+  var errEl = document.getElementById('booking-error');
+  errEl.style.display = 'none';
+
+  var date = document.getElementById('booking-date').value;
+  var time = document.getElementById('booking-time').value;
+
+  if (!date || !time) {
+    errEl.textContent = 'Please select a date and time.';
+    errEl.style.display = 'flex';
+    return;
+  }
+
+  var dateTimeStr = date + 'T' + time + ':00';
+  var sessionDT = new Date(dateTimeStr);
+  if (sessionDT <= new Date()) {
+    errEl.textContent = 'Please select a future date and time.';
+    errEl.style.display = 'flex';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-sm"></span> Booking...';
+
+  var m = APP.bookingMentor;
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btn.disabled = false;
+      btn.innerHTML = '📅 Confirm Booking';
+      if (!result.success) {
+        errEl.textContent = result.message;
+        errEl.style.display = 'flex';
+        return;
+      }
+      closeAllModals();
+      showToast('success', '✅ Session booked! ' + result.sessionNumber + ' confirmed.');
+      // Reload dashboard/sessions
+      if (APP.currentPage === 'dashboard') loadDashboard();
+      else if (APP.currentPage === 'sessions') loadSessions();
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      btn.innerHTML = '📅 Confirm Booking';
+      errEl.textContent = 'Booking failed. Please try again.';
+      errEl.style.display = 'flex';
+    })
+    .bookSession(
+      APP.student.email,
+      APP.student.name,
+      APP.student.rollNo,
+      APP.student.batch,
+      m.id,
+      m.name,
+      m.email,
+      dateTimeStr
+    );
+}
+
+// ============================================================
+// STUDENT FEEDBACK MODAL
+// ============================================================
+
+function openFeedbackModal(rowIndex) {
+  APP.sessionMap = APP.sessionMap || {};
+  var session = APP.sessionMap[rowIndex];
+  if (!session) { showToast('error', 'Session not found. Please refresh and try again.'); return; }
+
+  document.getElementById('sf-session-label').textContent = (session.msnSession || '') + ' with ' + (session.mentor || '');
+  document.getElementById('sf-row-index').value = session.rowIndex;
+  document.getElementById('sf-feedback-text').value = '';
+  document.getElementById('sf-rating-value').value = '';
+  document.querySelectorAll('#sf-stars .star-btn').forEach(function(b) { b.classList.remove('active'); });
+  document.getElementById('sf-error').style.display = 'none';
+
+  openModal('modal-student-feedback');
+}
+
+function submitStudentFeedbackModal() {
+  var btn = document.getElementById('sf-submit-btn');
+  var errEl = document.getElementById('sf-error');
+  errEl.style.display = 'none';
+
+  var rowIndex = document.getElementById('sf-row-index').value;
+  var feedback = document.getElementById('sf-feedback-text').value.trim();
+  var rating = document.getElementById('sf-rating-value').value;
+
+  if (!feedback) { errEl.textContent = 'Please enter your feedback.'; errEl.style.display = 'flex'; return; }
+  if (!rating)   { errEl.textContent = 'Please select a rating.';    errEl.style.display = 'flex'; return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-sm"></span> Submitting...';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btn.disabled = false;
+      btn.innerHTML = '✅ Submit Feedback';
+      if (!result.success) { errEl.textContent = result.message; errEl.style.display = 'flex'; return; }
+      closeAllModals();
+      showToast('success', '🙏 Feedback submitted!');
+      if (APP.currentPage === 'dashboard') loadDashboard();
+      else if (APP.currentPage === 'sessions') loadSessions();
+    })
+    .withFailureHandler(function() {
+      btn.disabled = false;
+      btn.innerHTML = '✅ Submit Feedback';
+      errEl.textContent = 'Submission failed. Try again.';
+      errEl.style.display = 'flex';
+    })
+    .submitStudentFeedback(APP.student.email, rowIndex, feedback, rating);
+}
+
+// ── Feedback Required Modal — inline submit ──
+function submitPendingFeedback() {
+  var btn = document.getElementById('pending-fb-submit-btn');
+  var errEl = document.getElementById('pending-fb-error');
+  errEl.style.display = 'none';
+
+  var rowIndex = document.getElementById('pending-feedback-row').value;
+  var feedback = document.getElementById('pending-fb-text').value.trim();
+  var rating = document.getElementById('pending-fb-rating-value').value;
+
+  if (!feedback) { errEl.textContent = 'Please enter your feedback.'; errEl.style.display = 'flex'; return; }
+  if (!rating)   { errEl.textContent = 'Please select a rating.';    errEl.style.display = 'flex'; return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-sm"></span> Submitting...';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btn.disabled = false;
+      btn.innerHTML = '✅ Submit & Proceed to Booking';
+      if (!result.success) { errEl.textContent = result.message; errEl.style.display = 'flex'; return; }
+      closeAllModals();
+      showToast('success', '🙏 Feedback submitted!');
+      // Now open booking
+      showBookingModal(APP.bookingMentor);
+    })
+    .withFailureHandler(function() {
+      btn.disabled = false;
+      btn.innerHTML = '✅ Submit & Proceed to Booking';
+      errEl.textContent = 'Submission failed. Try again.';
+      errEl.style.display = 'flex';
+    })
+    .submitStudentFeedback(APP.student.email, rowIndex, feedback, rating);
+}
+
+// ============================================================
+// STAR RATING HANDLER
+// ============================================================
+
+function initStarRating(containerId, inputId) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+  var stars = container.querySelectorAll('.star-btn');
+  stars.forEach(function(btn, idx) {
+    btn.addEventListener('click', function() {
+      var val = idx + 1;
+      document.getElementById(inputId).value = val;
+      stars.forEach(function(s, i) { s.classList.toggle('active', i < val); });
+    });
+    btn.addEventListener('mouseenter', function() {
+      stars.forEach(function(s, i) { s.style.color = i <= idx ? 'var(--amber)' : ''; });
+    });
+  });
+  container.addEventListener('mouseleave', function() {
+    var val = parseInt(document.getElementById(inputId).value) || 0;
+    stars.forEach(function(s, i) {
+      s.style.color = '';
+      s.classList.toggle('active', i < val);
+    });
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  initStarRating('sf-stars', 'sf-rating-value');
+  initStarRating('pending-fb-stars', 'pending-fb-rating-value');
+});
+
+// ============================================================
+// MODAL HELPERS
+// ============================================================
+
+function openModal(id) {
+  var el = document.getElementById(id);
+  if (el) el.classList.add('open');
+}
+function closeModal(id) {
+  var el = document.getElementById(id);
+  if (el) el.classList.remove('open');
+}
+function closeAllModals() {
+  document.querySelectorAll('.ssb-modal-overlay').forEach(function(el) {
+    el.classList.remove('open');
+  });
+}
+
+// Close modal on overlay click
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.ssb-modal-overlay').forEach(function(overlay) {
+    overlay.addEventListener('click', function(e) {
+      if (e.target === overlay) closeAllModals();
+    });
+  });
+});
+
+// ============================================================
+// TOAST
+// ============================================================
+
+function showToast(type, message) {
+  var container = document.getElementById('toast-container');
+  var toast = document.createElement('div');
+  toast.className = 'toast-item toast-' + type;
+  var icon = type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️';
+  toast.innerHTML = '<span class="toast-icon">' + icon + '</span><span class="toast-text">' + message + '</span>';
+  container.appendChild(toast);
+  setTimeout(function() {
+    toast.classList.add('removing');
+    setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 300);
+  }, 3500);
+}
+
+// ============================================================
+// UTILS
+// ============================================================
+
+function formatDateTime(dt) {
+  if (!dt || isNaN(dt.getTime())) return '—';
+  var opts = { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true };
+  return dt.toLocaleString('en-IN', opts);
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function escapeJs(str) {
+  if (!str) return '';
+  return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+}
+</script>
